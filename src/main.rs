@@ -1,5 +1,5 @@
 // ocr
-use leptess::{leptonica, tesseract};
+use tesseract::{PageSegMode, Tesseract};
 
 // error handling
 use anyhow::{Context, Result};
@@ -44,10 +44,20 @@ pub struct Args {
     pub no_pdf: bool,
 }
 
+/// Run OCR on one image with PSM 3 (auto page segmentation), which preserves
+/// the paragraph/line spacing of the original page.
+fn ocr_page(path: &str, language: &str) -> Result<Tesseract> {
+    let mut api = Tesseract::new(None, Some(language))
+        .context("failed to initialize Tesseract OCR")?
+        .set_image(path)
+        .context("failed to load image")?;
+
+    api.set_page_seg_mode(PageSegMode::PsmAuto);
+    api.recognize().context("OCR recognition failed")
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
-    let mut api = tesseract::TessApi::new(None, &args.ocr_language)
-        .context("failed to initialize Tesseract OCR")?;
 
     std::fs::create_dir_all(&args.out).unwrap();
 
@@ -58,24 +68,17 @@ fn main() -> Result<()> {
         .filter_map(|entry| {
             let path = entry.into_path();
 
-            let Ok(pix) = leptonica::pix_read(&path) else {
-                return None;
-            };
-
             println!("\n>>>>{}<<<<<", path.display());
 
-            api.set_image(&pix);
-
-            let Ok(text) = api.get_utf8_text() else {
+            let path_str = path.to_str()?;
+            let Ok(mut api) = ocr_page(path_str, &args.ocr_language) else {
                 return None;
             };
 
-            Some(text)
+            api.get_text().ok()
         })
         .enumerate()
     {
-        println!("{text}");
-
         let filename = format!("{:04}.txt", index + 1);
         let output_path = args.out.join(filename);
 
@@ -84,6 +87,8 @@ fn main() -> Result<()> {
                 "failed to write page {} to {output_path}: {error}",
                 index + 1
             );
+        } else {
+            println!("wrote page {} to {output_path}", index + 1);
         }
     }
 
