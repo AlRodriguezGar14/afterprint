@@ -30,6 +30,12 @@ pub fn ocr_pages_in_dir(
     ocr_language: &str,
 ) -> impl Iterator<Item = Tesseract> {
     WalkDir::new(image_folder)
+        .sort_by(|a, b| {
+            natord::compare(
+                &a.file_name().to_string_lossy(),
+                &b.file_name().to_string_lossy(),
+            )
+        })
         .into_iter()
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_type().is_file())
