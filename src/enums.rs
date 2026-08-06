@@ -16,3 +16,9 @@ impl OcrMode {
         }
     }
 }
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum TranslationModel {
+    Opus,
+    Nllb,
+}
