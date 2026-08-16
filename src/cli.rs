@@ -1,4 +1,4 @@
-use crate::enums::{OcrMode, TranslationModel};
+use crate::{enums::OcrMode, translation::TranslationArgs};
 use camino::Utf8PathBuf;
 use clap::{Parser, builder::PossibleValuesParser};
 
@@ -32,8 +32,8 @@ pub struct Args {
     #[arg(long, value_enum, default_value = "text")]
     pub ocr_mode: OcrMode,
 
-    #[arg(long, value_enum, default_value = "opus")]
-    pub translation_model: TranslationModel,
+    #[command(flatten)]
+    pub translation: TranslationArgs,
 
     #[arg(long)]
     pub force_text: bool,

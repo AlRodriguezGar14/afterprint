@@ -2,9 +2,10 @@ use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 
 mod ct2;
+mod opus_pairs;
 mod text;
 
-pub use ct2::Ct2Translator;
+pub use ct2::TranslationArgs;
 
 pub fn write_translations(
     out: &Utf8PathBuf,
