@@ -1,0 +1,27 @@
+services:
+  afterprint:
+    image: afterprint:local
+    pull_policy: never
+    build:
+      context: .
+      args:
+        OCR_LANGUAGES: ${OCR_LANGUAGES:-eng spa jpn ron}
+    user: "${AFTERPRINT_UID:-1000}:${AFTERPRINT_GID:-1000}"
+    environment:
+      HOME: /home/afterprint
+    volumes:
+      - type: bind
+        source: ${AFTERPRINT_SCANS:-./scans}
+        target: /scans
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${AFTERPRINT_OUT:-./out}:/out
+      - ${AFTERPRINT_HOME:-./.afterprint}:/home/afterprint
+      - type: bind
+        source: ${AFTERPRINT_MODEL:-./.afterprint}
+        target: /model
+        read_only: true
+        bind:
+          create_host_path: false
+    command: ["/scans", "--out", "/out"]

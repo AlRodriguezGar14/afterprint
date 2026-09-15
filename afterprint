@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ $# == 0 || ${1:-} == --help || ${1:-} == -h ]]; then
+    cat <<'HELP'
+Usage: ./afterprint SCANS_FOLDER [--out OUTPUT_FOLDER] [OPTIONS]
+
+Examples:
+  ./afterprint ./scans
+  ./afterprint "/path/to/my book" --out ./results --ocr-language spa
+  ./afterprint ./scans --ocr-language ron --translation-model opus \
+    --translation-source ro --translation-target en
+
+Output defaults to ./out in your current folder. Docker must be installed
+and running. The first run builds the app automatically (several minutes).
+Models are downloaded after confirmation and saved for future runs.
+Later runs use the existing image. Add --build after the scans folder to
+rebuild after updating the app or changing OCR_LANGUAGES.
+Use --app-help to see all application options.
+HELP
+    exit 0
+fi
+
+command -v docker >/dev/null 2>&1 || { echo 'Install Docker Desktop, then try again.' >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo 'Docker Compose is required. Install Docker Desktop or the Compose plugin.' >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo 'Start Docker, then try again.' >&2; exit 1; }
+
+args=()
+scans=.
+output=./out
+model=
+build=false
+if [[ $1 == --app-help ]]; then
+    args=(--help)
+    shift
+else
+    scans=$1
+    shift
+    args=(/scans --out /out)
+fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --build) build=true; shift ;;
+        --out|-o)
+            [[ $# -ge 2 && -n $2 ]] || { echo 'Provide a folder after --out.' >&2; exit 1; }
+            output=$2; shift 2 ;;
+        --out=*) output=${1#*=}; shift ;;
+        --translation-model-path)
+            [[ $# -ge 2 && -d $2 ]] || { echo 'Provide an existing model folder after --translation-model-path.' >&2; exit 1; }
+            model=$2; args+=(--translation-model-path /model); shift 2 ;;
+        --translation-model-path=*)
+            model=${1#*=}
+            [[ -d $model ]] || { echo "Model folder does not exist: $model" >&2; exit 1; }
+            args+=(--translation-model-path /model); shift ;;
+        *) args+=("$1"); shift ;;
+    esac
+done
+[[ -d $scans ]] || { echo "Scans folder does not exist: $scans" >&2; exit 1; }
+[[ -n $output ]] || { echo 'Output folder cannot be empty.' >&2; exit 1; }
+mkdir -p -- "$output" "$project_dir/.afterprint"
+export AFTERPRINT_SCANS="$(cd -- "$scans" && pwd)"
+export AFTERPRINT_OUT="$(cd -- "$output" && pwd)"
+export AFTERPRINT_HOME="$project_dir/.afterprint"
+export AFTERPRINT_MODEL="$(cd -- "${model:-$AFTERPRINT_HOME}" && pwd)"
+export AFTERPRINT_UID="$(id -u)" AFTERPRINT_GID="$(id -g)"
+
+if [[ $build == true ]] || ! docker image inspect afterprint:local >/dev/null 2>&1; then
+    echo 'Building afterprint (the first build takes several minutes)…' >&2
+    docker compose -f "$project_dir/compose.yaml" build --quiet afterprint
+fi
+exec docker compose -f "$project_dir/compose.yaml" run --rm --no-deps --pull never afterprint "${args[@]}"
