@@ -6,7 +6,9 @@ mod opus_pairs;
 mod text;
 
 pub use ct2::TranslationArgs;
+pub(crate) use text::translate_segments;
 
+/// Writes the page-addressable projection of a logical translation.
 pub fn write_translations(
     out: &Utf8PathBuf,
     index: usize,

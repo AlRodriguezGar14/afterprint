@@ -13,7 +13,7 @@ use std::{
 
 use crate::enums::{TranslationLanguage, TranslationModel};
 
-use super::{opus_pairs, text::translate_paragraphs};
+use super::{opus_pairs, translate_segments};
 
 const CT2_MAX_TRANSLATION_UNIT_CHARS: usize = 800;
 const NLLB_MODEL_ID: &str = "facebook/nllb-200-distilled-600M";
@@ -202,13 +202,15 @@ impl Ct2Translator {
             .collect())
     }
 
-    pub fn translate_page(&self, source: &str) -> Result<String> {
-        translate_paragraphs(source, CT2_MAX_TRANSLATION_UNIT_CHARS, |units| {
-            match self.model {
+    pub fn translate_segments(&self, sources: &[String]) -> Result<Vec<String>> {
+        translate_segments(
+            sources,
+            CT2_MAX_TRANSLATION_UNIT_CHARS,
+            |units| match self.model {
                 TranslationModel::Opus => self.translate_opus_units(units),
                 TranslationModel::Nllb => self.translate_nllb_units(units),
-            }
-        })
+            },
+        )
     }
 }
 

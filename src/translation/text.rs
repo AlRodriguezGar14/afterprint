@@ -80,3 +80,65 @@ where
 
     Ok(paragraphs.join("\n\n"))
 }
+
+/// Translates each logical segment independently while preserving model chunking.
+pub fn translate_segments<F>(
+    sources: &[String],
+    max_chars: usize,
+    mut translate: F,
+) -> Result<Vec<String>>
+where
+    F: FnMut(&[String]) -> Result<Vec<String>>,
+{
+    sources
+        .iter()
+        .map(|source| translate_paragraphs(source, max_chars, &mut translate))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn translates_each_logical_segment_as_one_input() {
+        let mut seen = Vec::new();
+        let translated = translate_segments(
+            &[
+                "The paragraph continues on page two.".to_string(),
+                "A second paragraph.".to_string(),
+            ],
+            800,
+            |units| {
+                seen.extend(units.iter().cloned());
+                Ok(units
+                    .iter()
+                    .map(|unit| format!("translated: {unit}"))
+                    .collect())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            seen,
+            vec![
+                "The paragraph continues on page two.",
+                "A second paragraph."
+            ]
+        );
+        assert_eq!(translated.len(), 2);
+    }
+
+    #[test]
+    fn keeps_long_segments_lossless_when_chunking() {
+        let source = "one two three four five six seven eight nine ten".to_string();
+        let translated = translate_segments(&[source], 12, |units| Ok(units.to_vec())).unwrap();
+
+        assert_eq!(
+            translated[0].split_whitespace().collect::<Vec<_>>(),
+            vec![
+                "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"
+            ]
+        );
+    }
+}

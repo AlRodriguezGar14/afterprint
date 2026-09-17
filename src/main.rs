@@ -5,7 +5,7 @@ use crate::document::Document;
 use crate::filter::filter_document;
 use crate::ocr::ocr_pages_in_dir;
 use crate::output::write_document_outputs;
-use crate::segments::build_segments;
+use crate::segments::{build_segments, map_translations_to_pages};
 use crate::translation::write_translations;
 
 mod cli;
@@ -29,15 +29,26 @@ fn main() -> Result<()> {
     let segments = build_segments(&document);
     let failure_count = write_document_outputs(&args.out, &document, &exclusions, &segments)?;
 
-    for page in &document.pages {
-        let source = page.raw_text.trim_end();
+    if let Some(translator) = &translator {
+        let sources = segments
+            .iter()
+            .map(|segment| segment.source_text.clone())
+            .collect::<Vec<_>>();
+        let translations = translator.translate_segments(&sources)?;
+        let page_translations =
+            map_translations_to_pages(&segments, &translations, document.pages.len())?;
 
-        if !source.trim().is_empty()
-            && let Some(translator) = &translator
-        {
-            let translation = translator.translate_page(source)?;
+        for page in &document.pages {
+            let source = page.filtered_text();
+            let translation = page_translations
+                .get(page.index)
+                .map(String::as_str)
+                .unwrap_or_default();
+            if source.trim().is_empty() || translation.trim().is_empty() {
+                continue;
+            }
 
-            match write_translations(&args.out, page.index, source, &translation) {
+            match write_translations(&args.out, page.index, source.trim_end(), translation) {
                 Ok(output_path) => {
                     println!(
                         "wrote translations page {} to {output_path}",
