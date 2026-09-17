@@ -5,18 +5,21 @@ use serde::Serialize;
 use crate::document::{Document, PageStatus};
 use crate::enums::OcrMode;
 use crate::filter::Exclusion;
+use crate::segments::Segment;
 
-/// Writes all raw, filtered, exclusion, and processing artifacts.
+/// Writes all raw, filtered, exclusion, processing, and segment artifacts.
 /// Returns the number of OCR-failed pages for the caller's final decision.
 pub fn write_document_outputs(
     out: &Utf8PathBuf,
     document: &Document,
     exclusions: &[Exclusion],
+    segments: &[Segment],
 ) -> Result<usize> {
     let report = processing_report(document);
     std::fs::create_dir_all(out.join("debug"))?;
     write_json(&out.join("debug/exclusions.json"), exclusions)?;
     write_json(&out.join("debug/processing.json"), &report)?;
+    write_json(&out.join("debug/segments.json"), segments)?;
 
     for page in &document.pages {
         write_page(out, page.index, page.raw_output_mode, &page.raw_output)?;
@@ -91,6 +94,7 @@ mod tests {
     use super::*;
     use crate::document::{Block, Page};
     use crate::filter::filter_document;
+    use crate::segments::build_segments;
 
     fn success_page(index: usize, body: &str) -> Page {
         let blocks = vec![
@@ -145,9 +149,10 @@ mod tests {
             ],
         };
         let exclusions = filter_document(&mut document);
+        let segments = build_segments(&document);
 
         assert_eq!(
-            write_document_outputs(&output, &document, &exclusions).unwrap(),
+            write_document_outputs(&output, &document, &exclusions, &segments).unwrap(),
             1
         );
 
@@ -185,6 +190,20 @@ mod tests {
             )
             .unwrap()["failures"][0]["page"],
             2
+        );
+        let segment_report = serde_json::from_slice::<serde_json::Value>(
+            &std::fs::read(output.join("debug/segments.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(segment_report.as_array().unwrap().len(), 2);
+        assert_eq!(segment_report[0]["id"], 1);
+        assert_eq!(
+            segment_report[0]["page_span"],
+            serde_json::json!({"start": 1, "end": 1})
+        );
+        assert_eq!(
+            segment_report[0]["mapping_limitation"],
+            crate::segments::PAGE_MAPPING_LIMITATION
         );
         assert_eq!(
             document

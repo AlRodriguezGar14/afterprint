@@ -5,6 +5,7 @@ use crate::document::Document;
 use crate::filter::filter_document;
 use crate::ocr::ocr_pages_in_dir;
 use crate::output::write_document_outputs;
+use crate::segments::build_segments;
 use crate::translation::write_translations;
 
 mod cli;
@@ -13,6 +14,7 @@ mod enums;
 mod filter;
 mod ocr;
 mod output;
+mod segments;
 mod translation;
 
 fn main() -> Result<()> {
@@ -24,7 +26,8 @@ fn main() -> Result<()> {
         pages: ocr_pages_in_dir(&args.image_folder, &args.ocr_language, args.ocr_mode).collect(),
     };
     let exclusions = filter_document(&mut document);
-    let failure_count = write_document_outputs(&args.out, &document, &exclusions)?;
+    let segments = build_segments(&document);
+    let failure_count = write_document_outputs(&args.out, &document, &exclusions, &segments)?;
 
     for page in &document.pages {
         let source = page.raw_text.trim_end();
