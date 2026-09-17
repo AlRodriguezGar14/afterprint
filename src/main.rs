@@ -1,47 +1,56 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::cli::Args;
-use crate::ocr::{collect_recognized_text, ocr_pages_in_dir, write_page};
+use crate::document::Document;
+use crate::filter::filter_document;
+use crate::ocr::ocr_pages_in_dir;
+use crate::output::write_document_outputs;
 use crate::translation::write_translations;
 
 mod cli;
+mod document;
 mod enums;
+mod filter;
 mod ocr;
+mod output;
 mod translation;
 
 fn main() -> Result<()> {
     let args = Args::parse();
 
     let translator = args.translation.open()?;
-    std::fs::create_dir_all(&args.out)?;
 
-    for (index, text) in ocr_pages_in_dir(&args.image_folder, &args.ocr_language)
-        .filter_map(|mut api| collect_recognized_text(&mut api, args.ocr_mode))
-        .enumerate()
-    {
-        let source = text.trim_end();
+    let mut document = Document {
+        pages: ocr_pages_in_dir(&args.image_folder, &args.ocr_language, args.ocr_mode).collect(),
+    };
+    let exclusions = filter_document(&mut document);
+    let failure_count = write_document_outputs(&args.out, &document, &exclusions)?;
+
+    for page in &document.pages {
+        let source = page.raw_text.trim_end();
 
         if !source.trim().is_empty()
             && let Some(translator) = &translator
         {
             let translation = translator.translate_page(source)?;
 
-            match write_translations(&args.out, index, source, &translation) {
+            match write_translations(&args.out, page.index, source, &translation) {
                 Ok(output_path) => {
-                    println!("wrote translations page {} to {output_path}", index + 1)
+                    println!(
+                        "wrote translations page {} to {output_path}",
+                        page.index + 1
+                    )
                 }
                 Err(error) => eprintln!(
                     "failed to write translations page {}. Err: {error}",
-                    index + 1
+                    page.index + 1
                 ),
             }
         }
-
-        match write_page(&args.out, index, args.ocr_mode, &text) {
-            Ok(output_path) => println!("wrote page {} to {output_path}", index + 1),
-            Err(error) => eprintln!("failed to write page {}. Err: {error}", index + 1),
-        }
     }
 
+    if failure_count != 0 {
+        bail!("{failure_count} OCR page(s) failed");
+    }
     Ok(())
 }
