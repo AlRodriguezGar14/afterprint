@@ -1,4 +1,4 @@
-use crate::{enums::OcrMode, translation::TranslationArgs};
+use crate::{enums::OcrMode, pdf::PdfContent, translation::TranslationArgs};
 use camino::Utf8PathBuf;
 use clap::{Parser, builder::PossibleValuesParser};
 
@@ -26,9 +26,6 @@ pub struct Args {
     )]
     pub ocr_language: String,
 
-    #[arg(long, default_value = "a4")]
-    pub page_size: String,
-
     #[arg(long, value_enum, default_value = "text")]
     pub ocr_mode: OcrMode,
 
@@ -36,15 +33,38 @@ pub struct Args {
     pub translation: TranslationArgs,
 
     #[arg(long)]
-    pub force_text: bool,
+    pub pdf: bool,
 
-    #[arg(long)]
-    pub no_pdf: bool,
+    #[arg(long, value_enum, default_value = "filtered")]
+    pub pdf_content: PdfContent,
 }
 
 impl Args {
     pub fn parse() -> Self {
         <Self as Parser>::parse()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_pdf_options_and_rejects_removed_flags() {
+        let args = Args::try_parse_from([
+            "afterprint",
+            "scans",
+            "--out",
+            "out",
+            "--pdf",
+            "--pdf-content",
+            "raw",
+        ])
+        .unwrap();
+
+        assert!(args.pdf);
+        assert_eq!(args.pdf_content, PdfContent::Raw);
+        assert!(Args::try_parse_from(["afterprint", "scans", "--out", "out", "--no-pdf"]).is_err());
     }
 }
 

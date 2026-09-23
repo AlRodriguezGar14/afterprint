@@ -5,6 +5,7 @@ use crate::document::Document;
 use crate::filter::filter_document;
 use crate::ocr::ocr_pages_in_dir;
 use crate::output::write_document_outputs;
+use crate::pdf::write_pdf;
 use crate::segments::{build_segments, map_translations_to_pages};
 use crate::translation::write_translations;
 
@@ -14,6 +15,7 @@ mod enums;
 mod filter;
 mod ocr;
 mod output;
+mod pdf;
 mod segments;
 mod translation;
 
@@ -28,6 +30,23 @@ fn main() -> Result<()> {
     let exclusions = filter_document(&mut document);
     let segments = build_segments(&document);
     let failure_count = write_document_outputs(&args.out, &document, &exclusions, &segments)?;
+
+    if args.pdf {
+        let page_texts = document
+            .pages
+            .iter()
+            .map(|page| args.pdf_content.text(page))
+            .collect::<Vec<_>>();
+        write_pdf(
+            &args.out,
+            "source.pdf",
+            &document,
+            &page_texts,
+            &args.title,
+            &args.author,
+            &args.language,
+        )?;
+    }
 
     if let Some(translator) = &translator {
         let sources = segments
@@ -60,6 +79,18 @@ fn main() -> Result<()> {
                     page.index + 1
                 ),
             }
+        }
+
+        if args.pdf {
+            write_pdf(
+                &args.out,
+                "translated.pdf",
+                &document,
+                &page_translations,
+                &args.title,
+                &args.author,
+                &args.language,
+            )?;
         }
     }
 

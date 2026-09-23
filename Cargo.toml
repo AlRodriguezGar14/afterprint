@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1"
 camino = "1"
 clap = { version = "4", features = ["derive"] }
+lopdf = { version = "0.44", default-features = false }
 natord = "1.0.9"
 printpdf = "0.12"
 serde = { version = "1", features = ["derive"] }

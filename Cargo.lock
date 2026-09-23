@@ -27,6 +27,7 @@ dependencies = [
  "camino",
  "clap",
  "ct2rs",
+ "lopdf",
  "natord",
  "printpdf",
  "serde",

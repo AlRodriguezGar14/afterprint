@@ -15,6 +15,7 @@ FROM debian:bookworm-slim
 ARG OCR_LANGUAGES="eng spa jpn ron"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libtesseract5 libgomp1 python3-venv \
+    fonts-noto-core fonts-noto-extra fonts-noto-cjk \
     $(printf 'tesseract-ocr-%s ' ${OCR_LANGUAGES}) \
     && rm -rf /var/lib/apt/lists/*
 

@@ -39,6 +39,17 @@ This command reads a Romanian book and translates it into English:
   --translation-model opus --translation-source ro --translation-target en
 ```
 
+Add `--pdf` to write aligned PDFs alongside the page text. The default is
+filtered OCR; use `--pdf-content raw` to render untouched OCR instead:
+
+```bash
+./afterprint "/path/to/book scans" --out ./results/my-book --pdf
+```
+
+The output includes `source.pdf`, and `translated.pdf` when translation is
+enabled. Both PDFs contain one fixed A4 page per input image; OCR failures
+remain blank pages so page numbers stay aligned.
+
 Replace the scans path and output folder with your own. Keep quotes around
 paths containing spaces. The output folder is created automatically; keep it
 outside your scans folder.
@@ -48,11 +59,11 @@ on the pages. `--translation-source` and `--translation-target` set the
 translation **from** and **to**. They use different codes:
 
 | Language | OCR code | Translation code |
-| --- | --- | --- |
-| English | `eng` | `en` |
-| Spanish | `spa` | `es` |
-| Japanese | `jpn` | `ja` |
-| Romanian | `ron` | `ro` |
+| -------- | -------- | ---------------- |
+| English  | `eng`    | `en`             |
+| Spanish  | `spa`    | `es`             |
+| Japanese | `jpn`    | `ja`             |
+| Romanian | `ron`    | `ro`             |
 
 For Spanish → English, change `ron` to `spa` and `ro` to `es`.
 For OCR without translation, omit the three `--translation-*` options.
@@ -83,8 +94,11 @@ If the image is missing, the launcher builds it automatically.
 Open the output folder when the command finishes:
 
 - `0001.txt`, `0002.txt`, … contain the recognized page text.
+- `filtered/0001.txt`, `filtered/0002.txt`, … contain filtered page text.
 - `translations/0001.txt`, … contain the original and translated text for
   pages with recognized text.
+- `source.pdf` contains filtered text by default; `translated.pdf` is written
+  for translated runs.
 
 These are editable text files, not a combined PDF or ebook. Check them against
 your scans: recognition can make mistakes or skip unreadable pages.
