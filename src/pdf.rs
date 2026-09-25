@@ -74,7 +74,15 @@ pub fn write_pdf(
 
 fn load_fonts(pdf: &mut PdfDocument) -> Result<Vec<LoadedFont>> {
     [
-        (&["NotoSans-Regular.ttf", "Arial Unicode.ttf"][..], 0),
+        (
+            &[
+                "NotoSans-Regular.ttf",
+                "Arial.ttf",
+                "NewYork.ttf",
+                "Arial Unicode.ttf",
+            ][..],
+            0,
+        ),
         (
             &[
                 "NotoSansArabic-Regular.ttf",
@@ -111,31 +119,30 @@ fn load_fonts(pdf: &mut PdfDocument) -> Result<Vec<LoadedFont>> {
 }
 
 fn find_font(filenames: &[&str]) -> Option<PathBuf> {
-    [
+    let roots = [
         "/usr/share/fonts",
         "/Library/Fonts",
         "/System/Library/Fonts",
-    ]
-    .into_iter()
-    .filter(|root| Path::new(root).exists())
-    .flat_map(|root| {
-        WalkDir::new(root)
+    ];
+    filenames.iter().find_map(|filename| {
+        roots
             .into_iter()
-            .filter_map(|entry| entry.ok())
+            .filter(|root| Path::new(root).exists())
+            .flat_map(|root| {
+                WalkDir::new(root)
+                    .into_iter()
+                    .filter_map(|entry| entry.ok())
+            })
+            .find(|entry| {
+                entry.path().is_file() && entry.file_name().to_string_lossy() == *filename
+            })
+            .map(|entry| entry.into_path())
     })
-    .find(|entry| {
-        entry.path().is_file()
-            && filenames
-                .iter()
-                .any(|filename| entry.file_name().to_string_lossy() == *filename)
-    })
-    .map(|entry| entry.into_path())
 }
 
 fn render_page(text: &str, fonts: &[LoadedFont]) -> Result<PdfPage> {
-    let font_size = fitted_font_size(text);
-    let max_chars = max_chars_per_line(font_size);
-    let lines = wrap_text(text, max_chars);
+    let font_size = fitted_font_size(text, fonts);
+    let lines = wrap_text_to_width(text, fonts, font_size);
     let line_height = font_size * LINE_HEIGHT_FACTOR;
     let mut ops = vec![
         Op::StartTextSection,
@@ -208,10 +215,10 @@ fn save_pdf(pdf: PdfDocument, language: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn fitted_font_size(text: &str) -> f32 {
+fn fitted_font_size(text: &str, fonts: &[LoadedFont]) -> f32 {
     let mut size = MAX_FONT_SIZE;
     while size > MIN_FONT_SIZE {
-        if wrap_text(text, max_chars_per_line(size)).len() <= available_lines(size) {
+        if wrap_text_to_width(text, fonts, size).len() <= available_lines(size) {
             return size;
         }
         size -= 0.5;
@@ -226,13 +233,39 @@ fn available_lines(font_size: f32) -> usize {
         .max(1.0) as usize
 }
 
-fn max_chars_per_line(font_size: f32) -> usize {
-    ((PAGE_WIDTH_MM - MARGIN_MM * 2.0) * 72.0 / 25.4 / font_size)
-        .floor()
-        .max(1.0) as usize
+fn content_width_pt() -> f32 {
+    (PAGE_WIDTH_MM - MARGIN_MM * 2.0) * 72.0 / 25.4
 }
 
+fn line_width_pt(line: &str, fonts: &[LoadedFont], font_size: f32) -> f32 {
+    line.chars()
+        .map(|character| character_width_pt(character, fonts, font_size))
+        .sum()
+}
+
+fn character_width_pt(character: char, fonts: &[LoadedFont], font_size: f32) -> f32 {
+    fonts
+        .iter()
+        .find_map(|font| {
+            let glyph = font.parsed.lookup_glyph_index(character as u32)?;
+            let units = font.parsed.get_glyph_width_internal(glyph)? as f32;
+            Some(units / font.parsed.font_metrics.units_per_em as f32 * font_size)
+        })
+        .unwrap_or(font_size * 0.5)
+}
+
+#[cfg(test)]
 fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
+    wrap_text_with(text, |line| line.chars().count() <= max_chars)
+}
+
+fn wrap_text_to_width(text: &str, fonts: &[LoadedFont], font_size: f32) -> Vec<String> {
+    wrap_text_with(text, |line| {
+        line_width_pt(line, fonts, font_size) <= content_width_pt()
+    })
+}
+
+fn wrap_text_with(text: &str, fits_line: impl Fn(&str) -> bool) -> Vec<String> {
     let mut lines = Vec::new();
     for source_line in text.lines() {
         if source_line.trim().is_empty() {
@@ -242,12 +275,16 @@ fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
 
         let mut line = String::new();
         for word in source_line.split_whitespace() {
-            if word.chars().count() > max_chars {
+            if !fits_line(word) {
                 if !line.is_empty() {
                     lines.push(std::mem::take(&mut line));
                 }
-                for chunk in word.chars().collect::<Vec<_>>().chunks(max_chars) {
-                    lines.push(chunk.iter().collect());
+                for character in word.chars() {
+                    let candidate = format!("{line}{character}");
+                    if !line.is_empty() && !fits_line(&candidate) {
+                        lines.push(std::mem::take(&mut line));
+                    }
+                    line.push(character);
                 }
                 continue;
             }
@@ -256,7 +293,7 @@ fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
             } else {
                 format!("{line} {word}")
             };
-            if candidate.chars().count() > max_chars {
+            if !fits_line(&candidate) {
                 lines.push(std::mem::take(&mut line));
                 line = word.to_string();
             } else {
@@ -329,18 +366,45 @@ mod tests {
     }
 
     #[test]
+    fn primary_font_covers_romanian_comma_below() {
+        if find_font(&["NotoSans-Regular.ttf", "NewYork.ttf", "Arial Unicode.ttf"]).is_none() {
+            return;
+        }
+
+        let mut pdf = PdfDocument::new("font test");
+        let fonts = load_fonts(&mut pdf).expect("native fallback fonts should load");
+
+        for character in ['ș', 'Ș', 'ț', 'Ț'] {
+            assert!(
+                fonts[0]
+                    .parsed
+                    .lookup_glyph_index(character as u32)
+                    .is_some(),
+                "primary font is missing {character:?}"
+            );
+        }
+    }
+
+    #[test]
     fn fitting_reduces_font_size_for_dense_pages_without_dropping_text() {
         let text = (0..5000).map(|_| "word").collect::<Vec<_>>().join(" ");
-        let size = fitted_font_size(&text);
+        let size = fitted_font_size(&text, &[]);
 
         assert!(size < MAX_FONT_SIZE);
-        assert!(!wrap_text(&text, max_chars_per_line(size)).is_empty());
+        assert!(!wrap_text_to_width(&text, &[], size).is_empty());
     }
 
     #[test]
     fn a4_page_constants_are_fixed() {
         assert_eq!((PAGE_WIDTH_MM, PAGE_HEIGHT_MM), (210.0, 297.0));
         assert_eq!(available_lines(MAX_FONT_SIZE), 41);
+    }
+
+    #[test]
+    fn measured_wrapping_uses_the_page_width() {
+        let text = "documentelor arheologice și evoluția";
+
+        assert_eq!(wrap_text_to_width(text, &[], MAX_FONT_SIZE), vec![text]);
     }
 
     #[test]
