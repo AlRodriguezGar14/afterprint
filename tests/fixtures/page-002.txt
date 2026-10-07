@@ -1,0 +1,6 @@
+Synthetic Archive
+onto page two with café, Кириллица, العربية, 日本語.
+1. This numeric footnote stays.
+Synthetic footer
+---
+Page 2

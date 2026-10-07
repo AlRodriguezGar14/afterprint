@@ -32,6 +32,10 @@ grep -Fx -- "$expected_root/model" "$LAUNCHER_LOG"
 grep -Fx -- '/model' "$LAUNCHER_LOG"
 grep -Fx -- 'spa' "$LAUNCHER_LOG"
 [[ -d 'result pages' && -d project/.afterprint ]]
+bash "$launcher" 'book pages' --pdf --pdf-content raw
+grep -Fx -- '--pdf' "$LAUNCHER_LOG"
+grep -Fx -- '--pdf-content' "$LAUNCHER_LOG"
+grep -Fx -- 'raw' "$LAUNCHER_LOG"
 bash "$launcher" 'book pages'
 grep -Fx -- "$expected_root/out" "$LAUNCHER_LOG"
 [[ ! -e $LAUNCHER_LOG.build ]]

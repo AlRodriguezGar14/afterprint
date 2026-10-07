@@ -366,6 +366,22 @@ mod tests {
     }
 
     #[test]
+    fn synthetic_fixture_unicode_has_glyphs_in_the_pdf_fonts() {
+        let text = include_str!("../tests/fixtures/page-002.txt");
+        let mut pdf = PdfDocument::new("fixture font test");
+        let fonts = load_fonts(&mut pdf).expect("PDF fonts should load");
+
+        for character in text.chars().filter(|character| character.is_alphanumeric()) {
+            assert!(
+                fonts
+                    .iter()
+                    .any(|font| { font.parsed.lookup_glyph_index(character as u32).is_some() }),
+                "no PDF font contains {character:?}"
+            );
+        }
+    }
+
+    #[test]
     fn primary_font_covers_romanian_comma_below() {
         if find_font(&["NotoSans-Regular.ttf", "NewYork.ttf", "Arial Unicode.ttf"]).is_none() {
             return;

@@ -1,0 +1,6 @@
+Synthetic Archive
+This is later page four.
+2. Another numeric footnote stays.
+Synthetic footer
+---
+Page 4

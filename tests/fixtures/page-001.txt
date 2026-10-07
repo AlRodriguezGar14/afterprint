@@ -1,0 +1,5 @@
+Synthetic Archive
+This synthetic paragraph continues
+Synthetic footer
+---
+Page 1

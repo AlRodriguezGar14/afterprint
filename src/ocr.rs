@@ -280,6 +280,12 @@ struct ParsedLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::Document;
+    use crate::filter::{ExclusionReason, filter_document};
+    use crate::output::write_document_outputs;
+    use crate::pdf::{PdfContent, write_pdf};
+    use crate::segments::{PageSpan, build_segments, map_translations_to_pages};
+    use crate::translation::translate_segments;
 
     #[test]
     fn parses_tsv_coordinates_and_average_confidence() {
@@ -361,5 +367,297 @@ mod tests {
         assert_eq!(indexed_paths[1].0, 1);
         assert_eq!(indexed_paths[1].1.file_name().unwrap(), "002.jpg");
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn synthetic_document_runs_through_translation_outputs_and_aligned_pdfs() {
+        let first_text = include_str!("../tests/fixtures/page-001.txt");
+        let second_text = include_str!("../tests/fixtures/page-002.txt");
+        let fourth_text = include_str!("../tests/fixtures/page-004.txt");
+        let mut document = Document {
+            pages: vec![
+                fixture_page(
+                    0,
+                    "page-001.png",
+                    include_str!("../tests/fixtures/page-001.tsv"),
+                    first_text,
+                ),
+                fixture_page(
+                    1,
+                    "page-002.png",
+                    include_str!("../tests/fixtures/page-002.tsv"),
+                    second_text,
+                ),
+                Page {
+                    index: 2,
+                    path: "page-003.png".to_string(),
+                    status: PageStatus::OcrFailed {
+                        error: include_str!("../tests/fixtures/page-003.failed")
+                            .trim()
+                            .to_string(),
+                    },
+                    raw_text: String::new(),
+                    raw_output: String::new(),
+                    raw_output_mode: OcrMode::Text,
+                    blocks: Vec::new(),
+                    filtered_blocks: Vec::new(),
+                    page_width: 0,
+                    page_height: 0,
+                    warnings: Vec::new(),
+                },
+                fixture_page(
+                    3,
+                    "page-004.png",
+                    include_str!("../tests/fixtures/page-004.tsv"),
+                    fourth_text,
+                ),
+            ],
+        };
+
+        assert_eq!(
+            document
+                .pages
+                .iter()
+                .map(|page| page.index)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(document.pages[0].raw_text, first_text);
+        assert_eq!(document.pages[1].raw_text, second_text);
+        assert_eq!(document.pages[3].raw_text, fourth_text);
+
+        let exclusions = filter_document(&mut document);
+        for (text, reason) in [
+            ("Synthetic Archive", ExclusionReason::RepeatedTopLine),
+            ("Synthetic footer", ExclusionReason::RepeatedBottomLine),
+            ("---", ExclusionReason::SeparatorLikeFooter),
+            ("Page 2", ExclusionReason::FixedPositionPageNumber),
+        ] {
+            assert!(exclusions.iter().any(|exclusion| {
+                exclusion.text == text && exclusion.reason == reason && exclusion.page == 2
+            }));
+        }
+        assert!(exclusions.iter().any(|exclusion| {
+            exclusion.text == "Synthetic Archive"
+                && exclusion.page == 1
+                && exclusion.coordinates.left == 100
+                && exclusion.coordinates.top == 50
+        }));
+        assert!(
+            document.pages[1]
+                .filtered_blocks
+                .iter()
+                .any(|block| block.text == "1. This numeric footnote stays.")
+        );
+        assert_eq!(
+            document.pages[0].filtered_text(),
+            "This synthetic paragraph continues\n"
+        );
+
+        let segments = build_segments(&document);
+        assert_eq!(segments[0].page_span, PageSpan { start: 1, end: 2 });
+        assert_eq!(
+            segments[0].source_text,
+            "This synthetic paragraph continues onto page two with café, Кириллица, العربية, 日本語."
+        );
+        assert!(
+            segments
+                .iter()
+                .all(|segment| segment.page_span.end < 3 || segment.page_span.start > 3)
+        );
+
+        let mut translator_inputs = Vec::new();
+        let translations = translate_segments(
+            &segments
+                .iter()
+                .map(|segment| segment.source_text.clone())
+                .collect::<Vec<_>>(),
+            800,
+            |units| {
+                translator_inputs.extend(units.iter().cloned());
+                Ok(units
+                    .iter()
+                    .map(|source| format!("traduit {source}"))
+                    .collect())
+            },
+        )
+        .unwrap();
+        assert_eq!(translator_inputs[0], segments[0].source_text);
+        assert_eq!(
+            translator_inputs
+                .iter()
+                .filter(|source| source.as_str() == segments[0].source_text.as_str())
+                .count(),
+            1
+        );
+        let page_translations =
+            map_translations_to_pages(&segments, &translations, document.pages.len()).unwrap();
+        assert!(page_translations[0].contains("traduit"));
+        assert!(page_translations[1].contains("日本語."));
+        assert!(page_translations[2].is_empty());
+        assert!(page_translations[3].contains("later page four"));
+        assert_eq!(
+            page_translations
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            translations
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+        );
+
+        let output = Utf8PathBuf::from_path_buf(std::env::temp_dir().join(format!(
+            "afterprint-p1-2-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )))
+        .unwrap();
+        assert_eq!(
+            write_document_outputs(&output, &document, &exclusions, &segments).unwrap(),
+            1
+        );
+        assert_eq!(
+            std::fs::read_to_string(output.join("0001.txt")).unwrap(),
+            first_text
+        );
+        assert!(
+            std::fs::read_to_string(output.join("0003.txt"))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            std::fs::read_to_string(output.join("0004.txt")).unwrap(),
+            fourth_text
+        );
+        assert_eq!(
+            std::fs::read_to_string(output.join("filtered/0002.txt")).unwrap(),
+            "onto page two with café, Кириллица, العربية, 日本語.\n1. This numeric footnote stays.\n"
+        );
+        let processing: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join("debug/processing.json")).unwrap())
+                .unwrap();
+        assert_eq!(processing["failures"][0]["page"], 3);
+        let exclusion_report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(output.join("debug/exclusions.json")).unwrap())
+                .unwrap();
+        assert!(
+            exclusion_report
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|exclusion| {
+                    exclusion["text"] == "Synthetic Archive"
+                        && exclusion["page"] == 2
+                        && exclusion["coordinates"]["top"] == 50
+                        && exclusion["reason"] == "repeated_top_line"
+                })
+        );
+        for page in &document.pages {
+            let source = page.filtered_text();
+            let translation = &page_translations[page.index];
+            if !source.trim().is_empty() && !translation.trim().is_empty() {
+                crate::translation::write_translations(
+                    &output,
+                    page.index,
+                    source.trim_end(),
+                    translation,
+                )
+                .unwrap();
+            }
+        }
+        for page_number in [1, 2, 4] {
+            assert!(
+                output
+                    .join(format!("translations/{page_number:04}.txt"))
+                    .is_file()
+            );
+        }
+        assert!(!output.join("translations/0003.txt").exists());
+
+        for (filename, texts) in [
+            (
+                "source.pdf",
+                document
+                    .pages
+                    .iter()
+                    .map(|page| PdfContent::Filtered.text(page))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "source-raw.pdf",
+                document
+                    .pages
+                    .iter()
+                    .map(|page| PdfContent::Raw.text(page))
+                    .collect::<Vec<_>>(),
+            ),
+            ("translated.pdf", page_translations.clone()),
+        ] {
+            write_pdf(
+                &output,
+                filename,
+                &document,
+                &texts,
+                "Synthetic",
+                "Test",
+                "en",
+            )
+            .unwrap();
+        }
+        for filename in ["source.pdf", "source-raw.pdf", "translated.pdf"] {
+            let pdf = lopdf::Document::load(output.join(filename).as_std_path()).unwrap();
+            assert_eq!(pdf.get_pages().len(), 4, "{filename}");
+        }
+        let filtered_pdf = lopdf::Document::load(output.join("source.pdf").as_std_path()).unwrap();
+        let raw_pdf = lopdf::Document::load(output.join("source-raw.pdf").as_std_path()).unwrap();
+        let translated_pdf =
+            lopdf::Document::load(output.join("translated.pdf").as_std_path()).unwrap();
+        let filtered_pages = filtered_pdf.get_pages();
+        let raw_pages = raw_pdf.get_pages();
+        let translated_pages = translated_pdf.get_pages();
+        let filtered_first = filtered_pdf.get_page_content(*filtered_pages.get(&1).unwrap());
+        let raw_first = raw_pdf.get_page_content(*raw_pages.get(&1).unwrap());
+        assert_ne!(filtered_first, raw_first);
+        assert!(filtered_first.windows(2).any(|window| window == b"Tj"));
+        for page_number in [2, 4] {
+            let content = filtered_pdf.get_page_content(*filtered_pages.get(&page_number).unwrap());
+            assert!(content.windows(2).any(|window| window == b"Tj"));
+        }
+        for page_number in [1, 2, 4] {
+            let content =
+                translated_pdf.get_page_content(*translated_pages.get(&page_number).unwrap());
+            assert!(content.windows(2).any(|window| window == b"Tj"));
+        }
+        for (pdf, pages) in [
+            (&filtered_pdf, &filtered_pages),
+            (&raw_pdf, &raw_pages),
+            (&translated_pdf, &translated_pages),
+        ] {
+            let failed_page = pdf.get_page_content(*pages.get(&3).unwrap());
+            assert!(!failed_page.windows(2).any(|window| window == b"Tj"));
+        }
+
+        std::fs::remove_dir_all(output).unwrap();
+    }
+
+    fn fixture_page(index: usize, path: &str, tsv: &str, raw_text: &str) -> Page {
+        let (page_width, page_height, blocks) = parse_tsv(tsv);
+        Page {
+            index,
+            path: path.to_string(),
+            status: PageStatus::OcrSucceeded,
+            raw_text: raw_text.to_string(),
+            raw_output: raw_text.to_string(),
+            raw_output_mode: OcrMode::Text,
+            filtered_blocks: blocks.clone(),
+            blocks,
+            page_width,
+            page_height,
+            warnings: Vec::new(),
+        }
     }
 }
