@@ -1,7 +1,6 @@
 use crate::document::{Block, Coordinates, Page, PageStatus};
 use crate::enums::OcrMode;
 use anyhow::{Context, Result};
-use camino::Utf8PathBuf;
 use std::path::{Path, PathBuf};
 use tesseract::{PageSegMode, Tesseract};
 use walkdir::WalkDir;
@@ -35,33 +34,47 @@ pub fn ocr_page(path: &str, language: &str) -> Result<Tesseract> {
     api.recognize().context("OCR recognition failed")
 }
 
-/// Yields one [`Page`] per naturally sorted input file in `image_folder`.
-/// Each page receives its zero-based physical index before OCR; failures remain
-/// in the sequence, and no files are written.
-pub fn ocr_pages_in_dir(
-    image_folder: &Utf8PathBuf,
+/// Progress and OCR results for naturally sorted input paths. Page indexes
+/// remain physical, and failures are yielded in sequence rather than dropped.
+pub(crate) enum OcrEvent {
+    PageProgress { page: usize, total: usize },
+    Page(Page),
+}
+
+pub(crate) fn ocr_pages_from_paths(
+    paths: Vec<PathBuf>,
     ocr_language: &str,
     mode: OcrMode,
-) -> impl Iterator<Item = Page> {
-    image_paths(image_folder)
+) -> impl Iterator<Item = OcrEvent> + '_ {
+    let total = paths.len();
+    paths
         .into_iter()
         .enumerate()
-        .map(move |(index, path)| {
+        .flat_map(move |(index, path)| {
             let display_path = path.display().to_string();
-            let Some(path_str) = path.to_str() else {
-                return failed_page(index, display_path, "input path is not valid UTF-8");
-            };
+            let recognize_page = move || {
+                let Some(path_str) = path.to_str() else {
+                    return failed_page(index, display_path, "input path is not valid UTF-8");
+                };
 
-            let api = match ocr_page(path_str, ocr_language) {
-                Ok(api) => api,
-                Err(error) => return failed_page(index, display_path, &error.to_string()),
-            };
+                let api = match ocr_page(path_str, ocr_language) {
+                    Ok(api) => api,
+                    Err(error) => return failed_page(index, display_path, &error.to_string()),
+                };
 
-            collect_ocr_page(index, display_path, api, mode)
+                collect_ocr_page(index, display_path, api, mode)
+            };
+            std::iter::once(OcrEvent::PageProgress {
+                page: index + 1,
+                total,
+            })
+            .chain(std::iter::once_with(move || {
+                OcrEvent::Page(recognize_page())
+            }))
         })
 }
 
-fn image_paths(image_folder: &Utf8PathBuf) -> Vec<PathBuf> {
+pub(crate) fn supported_image_paths(image_folder: &std::path::Path) -> Vec<PathBuf> {
     WalkDir::new(image_folder)
         .sort_by(|a, b| {
             natord::compare(
@@ -283,9 +296,10 @@ mod tests {
     use crate::document::Document;
     use crate::filter::{ExclusionReason, filter_document};
     use crate::output::write_document_outputs;
-    use crate::pdf::{PdfContent, write_pdf};
+    use crate::pdf::{PdfContent, SOURCE_PDF_FILENAME, TRANSLATED_PDF_FILENAME, write_pdf};
     use crate::segments::{PageSpan, build_segments, map_translations_to_pages};
     use crate::translation::translate_segments;
+    use camino::Utf8PathBuf;
 
     #[test]
     fn parses_tsv_coordinates_and_average_confidence() {
@@ -356,7 +370,7 @@ mod tests {
         std::fs::write(folder.join("001.jpg"), []).unwrap();
         let folder = Utf8PathBuf::from_path_buf(folder).unwrap();
 
-        let indexed_paths = image_paths(&folder)
+        let indexed_paths = supported_image_paths(folder.as_std_path())
             .into_iter()
             .enumerate()
             .collect::<Vec<_>>();
@@ -517,7 +531,7 @@ mod tests {
         )))
         .unwrap();
         assert_eq!(
-            write_document_outputs(&output, &document, &exclusions, &segments).unwrap(),
+            write_document_outputs(&output, &document, &exclusions, &segments, |_, _| {}).unwrap(),
             1
         );
         assert_eq!(
@@ -580,7 +594,7 @@ mod tests {
 
         for (filename, texts) in [
             (
-                "source.pdf",
+                SOURCE_PDF_FILENAME,
                 document
                     .pages
                     .iter()
@@ -595,7 +609,7 @@ mod tests {
                     .map(|page| PdfContent::Raw.text(page))
                     .collect::<Vec<_>>(),
             ),
-            ("translated.pdf", page_translations.clone()),
+            (TRANSLATED_PDF_FILENAME, page_translations.clone()),
         ] {
             write_pdf(
                 &output,
@@ -608,14 +622,19 @@ mod tests {
             )
             .unwrap();
         }
-        for filename in ["source.pdf", "source-raw.pdf", "translated.pdf"] {
+        for filename in [
+            SOURCE_PDF_FILENAME,
+            "source-raw.pdf",
+            TRANSLATED_PDF_FILENAME,
+        ] {
             let pdf = lopdf::Document::load(output.join(filename).as_std_path()).unwrap();
             assert_eq!(pdf.get_pages().len(), 4, "{filename}");
         }
-        let filtered_pdf = lopdf::Document::load(output.join("source.pdf").as_std_path()).unwrap();
+        let filtered_pdf =
+            lopdf::Document::load(output.join(SOURCE_PDF_FILENAME).as_std_path()).unwrap();
         let raw_pdf = lopdf::Document::load(output.join("source-raw.pdf").as_std_path()).unwrap();
         let translated_pdf =
-            lopdf::Document::load(output.join("translated.pdf").as_std_path()).unwrap();
+            lopdf::Document::load(output.join(TRANSLATED_PDF_FILENAME).as_std_path()).unwrap();
         let filtered_pages = filtered_pdf.get_pages();
         let raw_pages = raw_pdf.get_pages();
         let translated_pages = translated_pdf.get_pages();

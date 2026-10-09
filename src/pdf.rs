@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, bail, ensure};
-use clap::ValueEnum;
 use printpdf::{
     Mm, Op, ParsedFont, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point, Pt, TextItem,
 };
@@ -15,7 +14,10 @@ const MAX_FONT_SIZE: f32 = 14.0;
 const MIN_FONT_SIZE: f32 = 2.0;
 const LINE_HEIGHT_FACTOR: f32 = 1.25;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub const SOURCE_PDF_FILENAME: &str = "source.pdf";
+pub const TRANSLATED_PDF_FILENAME: &str = "translated.pdf";
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PdfContent {
     Filtered,
     Raw,
@@ -68,7 +70,6 @@ pub fn write_pdf(
     let bytes = save_pdf(pdf, language)?;
     let path = out.join(filename);
     std::fs::write(&path, bytes).with_context(|| format!("failed to write PDF to {path}"))?;
-    println!("wrote {filename}");
     Ok(())
 }
 

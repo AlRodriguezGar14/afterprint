@@ -5,7 +5,8 @@ mod ct2;
 mod opus_pairs;
 mod text;
 
-pub use ct2::TranslationArgs;
+pub(crate) use ct2::Ct2Translator;
+pub use ct2::{ModelReadiness, TranslationConfig};
 pub(crate) use text::translate_segments;
 
 /// Writes the page-addressable projection of a logical translation.

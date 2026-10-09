@@ -1,8 +1,53 @@
-use crate::{enums::OcrMode, pdf::PdfContent, translation::TranslationArgs};
+use crate::{
+    RunConfig,
+    enums::{OcrMode, TRANSLATION_LANGUAGES, TranslationLanguage, TranslationModel},
+    pdf::PdfContent,
+    translation::TranslationConfig,
+};
 use camino::Utf8PathBuf;
-use clap::{Parser, builder::PossibleValuesParser};
+use clap::{
+    Parser, ValueEnum,
+    builder::{PossibleValue, PossibleValuesParser},
+};
+use std::path::PathBuf;
+
+#[derive(clap::Args, Debug, Default)]
+pub struct TranslationArgs {
+    /// Enable translation with OPUS or NLLB.
+    #[arg(long, value_enum)]
+    translation_model: Option<TranslationModel>,
+
+    /// Source language for a managed model, or for a custom NLLB model.
+    #[arg(long, value_enum, requires = "translation_model")]
+    translation_source: Option<TranslationLanguage>,
+
+    /// Target language for a managed model, or for a custom NLLB model.
+    #[arg(long, value_enum, requires = "translation_model")]
+    translation_target: Option<TranslationLanguage>,
+
+    /// Use an existing converted model instead of a managed model.
+    #[arg(long, requires = "translation_model")]
+    translation_model_path: Option<PathBuf>,
+}
+
+impl TranslationArgs {
+    fn translation_config(&self) -> anyhow::Result<Option<TranslationConfig>> {
+        let Some(model) = self.translation_model else {
+            return Ok(None);
+        };
+        let config = TranslationConfig {
+            model,
+            source: self.translation_source,
+            target: self.translation_target,
+            model_path: self.translation_model_path.clone(),
+        };
+        config.validate()?;
+        Ok(Some(config))
+    }
+}
 
 #[derive(Parser, Debug)]
+/// Clap adapter for the current terminal interface.
 #[command(version, about, long_about = None)]
 pub struct Args {
     pub image_folder: Utf8PathBuf,
@@ -40,8 +85,79 @@ pub struct Args {
 }
 
 impl Args {
+    /// Parses command-line arguments once using Clap.
     pub fn parse() -> Self {
         <Self as Parser>::parse()
+    }
+
+    /// Converts parsed CLI values to the same configuration used by libraries.
+    pub fn run_config(&self) -> anyhow::Result<RunConfig> {
+        Ok(RunConfig {
+            input: self.image_folder.clone().into_std_path_buf(),
+            output: self.out.clone().into_std_path_buf(),
+            ocr_language: self.ocr_language.clone(),
+            ocr_mode: self.ocr_mode,
+            title: self.title.clone(),
+            author: self.author.clone(),
+            language: self.language.clone(),
+            pdf: self.pdf,
+            pdf_content: self.pdf_content,
+            translation: self.translation.translation_config()?,
+        })
+    }
+}
+
+impl ValueEnum for OcrMode {
+    fn value_variants<'a>() -> &'a [Self] {
+        OCR_MODES
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(PossibleValue::new(match self {
+            Self::Text => "text",
+            Self::Hocr => "hocr",
+            Self::Tsv => "tsv",
+        }))
+    }
+}
+
+impl ValueEnum for PdfContent {
+    fn value_variants<'a>() -> &'a [Self] {
+        PDF_CONTENTS
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(PossibleValue::new(match self {
+            Self::Filtered => "filtered",
+            Self::Raw => "raw",
+        }))
+    }
+}
+
+impl ValueEnum for TranslationModel {
+    fn value_variants<'a>() -> &'a [Self] {
+        TRANSLATION_MODELS
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(PossibleValue::new(match self {
+            Self::Opus => "opus",
+            Self::Nllb => "nllb",
+        }))
+    }
+}
+
+const OCR_MODES: &[OcrMode] = &[OcrMode::Text, OcrMode::Hocr, OcrMode::Tsv];
+const PDF_CONTENTS: &[PdfContent] = &[PdfContent::Filtered, PdfContent::Raw];
+const TRANSLATION_MODELS: &[TranslationModel] = &[TranslationModel::Opus, TranslationModel::Nllb];
+
+impl ValueEnum for TranslationLanguage {
+    fn value_variants<'a>() -> &'a [Self] {
+        TRANSLATION_LANGUAGES
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(PossibleValue::new(self.code()))
     }
 }
 

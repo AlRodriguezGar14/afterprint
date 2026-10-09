@@ -1,6 +1,4 @@
-use clap::{ValueEnum, builder::PossibleValue};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OcrMode {
     Text,
     Hocr,
@@ -17,7 +15,7 @@ impl OcrMode {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum TranslationModel {
     Opus,
     Nllb,
@@ -45,17 +43,7 @@ impl TranslationLanguage {
     }
 }
 
-impl ValueEnum for TranslationLanguage {
-    fn value_variants<'a>() -> &'a [Self] {
-        TRANSLATION_LANGUAGES
-    }
-
-    fn to_possible_value(&self) -> Option<PossibleValue> {
-        Some(PossibleValue::new(self.code))
-    }
-}
-
-const TRANSLATION_LANGUAGES: &[TranslationLanguage] = &[
+pub(crate) const TRANSLATION_LANGUAGES: &[TranslationLanguage] = &[
     TranslationLanguage::new("af", "afr_Latn"),
     TranslationLanguage::new("sq", "als_Latn"),
     TranslationLanguage::new("am", "amh_Ethi"),

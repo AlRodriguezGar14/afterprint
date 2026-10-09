@@ -14,17 +14,28 @@ pub fn write_document_outputs(
     document: &Document,
     exclusions: &[Exclusion],
     segments: &[Segment],
+    mut artifact_written: impl FnMut(String, Option<usize>),
 ) -> Result<usize> {
     let report = processing_report(document);
     std::fs::create_dir_all(out.join("debug"))?;
     write_json(&out.join("debug/exclusions.json"), exclusions)?;
+    artifact_written("debug/exclusions.json".into(), None);
     write_json(&out.join("debug/processing.json"), &report)?;
+    artifact_written("debug/processing.json".into(), None);
     write_json(&out.join("debug/segments.json"), segments)?;
+    artifact_written("debug/segments.json".into(), None);
 
     for page in &document.pages {
         write_page(out, page.index, page.raw_output_mode, &page.raw_output)?;
+        artifact_written(
+            format!("{:04}.{}", page.index + 1, page.raw_output_mode.extension()),
+            Some(page.index + 1),
+        );
         write_filtered_page(out, page.index, &page.filtered_text())?;
-        println!("wrote page {}", page.index + 1);
+        artifact_written(
+            format!("filtered/{:04}.txt", page.index + 1),
+            Some(page.index + 1),
+        );
     }
 
     Ok(report.failures.len())
@@ -152,7 +163,7 @@ mod tests {
         let segments = build_segments(&document);
 
         assert_eq!(
-            write_document_outputs(&output, &document, &exclusions, &segments).unwrap(),
+            write_document_outputs(&output, &document, &exclusions, &segments, |_, _| {}).unwrap(),
             1
         );
 
