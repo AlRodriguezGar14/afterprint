@@ -29,6 +29,11 @@ EVAL_ROOT="$(mktemp -d)"
   --translation-model opus --translation-source ro --translation-target en
 ```
 
+`rtk cargo test` also runs the fixture through both CLI output modes. The JSONL
+test parses every stdout line, checks the versioned page/artifact events and
+terminal counts (`3` total, `2` succeeded, `1` failed), and verifies the CLI
+diagnostic remains on stderr.
+
 For content evaluation, use a real scan folder and matching language codes.
 In one shell session, compare the scans with raw and filtered text, review
 `debug/exclusions.json`, then compare the source and translated PDFs with

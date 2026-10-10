@@ -46,6 +46,12 @@ impl TranslationArgs {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+/// Supported machine-readable CLI event output.
+pub enum EventFormat {
+    Jsonl,
+}
+
 #[derive(Parser, Debug)]
 /// Clap adapter for the current terminal interface.
 #[command(version, about, long_about = None)]
@@ -82,6 +88,10 @@ pub struct Args {
 
     #[arg(long, value_enum, default_value = "filtered")]
     pub pdf_content: PdfContent,
+
+    /// Emit a versioned machine-readable event stream.
+    #[arg(long, value_enum)]
+    pub events: Option<EventFormat>,
 }
 
 impl Args {
@@ -181,6 +191,15 @@ mod tests {
         assert!(args.pdf);
         assert_eq!(args.pdf_content, PdfContent::Raw);
         assert!(Args::try_parse_from(["afterprint", "scans", "--out", "out", "--no-pdf"]).is_err());
+    }
+
+    #[test]
+    fn parses_jsonl_event_output() {
+        let args =
+            Args::try_parse_from(["afterprint", "scans", "--out", "out", "--events", "jsonl"])
+                .unwrap();
+
+        assert_eq!(args.events, Some(EventFormat::Jsonl));
     }
 }
 

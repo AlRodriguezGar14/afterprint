@@ -1,21 +1,44 @@
 use afterprint::{
-    RunEvent, RunStatus, SOURCE_PDF_FILENAME, TRANSLATED_PDF_FILENAME, cli::Args, run_cli,
+    RunEvent, RunStatus, SOURCE_PDF_FILENAME, TRANSLATED_PDF_FILENAME,
+    cli::{Args, EventFormat},
+    run, run_cli,
 };
 use anyhow::{Result, bail};
-use std::path::Path;
+use std::io::{self, Write};
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let config = args.run_config()?;
-    let report = run_cli(&config, |event| print_human_event(&config.output, &event))?;
+    let jsonl = args.events == Some(EventFormat::Jsonl);
+    let mut output_error = None;
+    let report = if jsonl {
+        let stdout = io::stdout();
+        let mut stdout = stdout.lock();
+        let mut emit = |event: RunEvent| {
+            if let Err(error) = write_jsonl_event(&event, &mut stdout) {
+                output_error.get_or_insert(error);
+            }
+        };
+        run(&config, &mut emit)?
+    } else {
+        run_cli(&config, |event| print_human_event(&config.output, &event))?
+    };
 
+    if let Some(error) = output_error {
+        return Err(error.into());
+    }
     if report.status == RunStatus::PartialFailure {
         bail!("{} OCR page(s) failed", report.pages_failed);
     }
     Ok(())
 }
 
-fn print_human_event(output: &Path, event: &RunEvent) {
+fn write_jsonl_event(event: &RunEvent, stdout: &mut impl Write) -> io::Result<()> {
+    let line = event.to_jsonl().map_err(io::Error::other)?;
+    writeln!(stdout, "{line}")
+}
+
+fn print_human_event(output: &std::path::Path, event: &RunEvent) {
     match event {
         RunEvent::ArtifactWritten {
             path,

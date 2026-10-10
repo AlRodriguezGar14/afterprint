@@ -36,6 +36,9 @@ bash "$launcher" 'book pages' --pdf --pdf-content raw
 grep -Fx -- '--pdf' "$LAUNCHER_LOG"
 grep -Fx -- '--pdf-content' "$LAUNCHER_LOG"
 grep -Fx -- 'raw' "$LAUNCHER_LOG"
+bash "$launcher" 'book pages' --events jsonl
+grep -Fx -- '--events' "$LAUNCHER_LOG"
+grep -Fx -- 'jsonl' "$LAUNCHER_LOG"
 bash "$launcher" 'book pages'
 grep -Fx -- "$expected_root/out" "$LAUNCHER_LOG"
 [[ ! -e $LAUNCHER_LOG.build ]]

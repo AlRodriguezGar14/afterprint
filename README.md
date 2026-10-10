@@ -107,6 +107,9 @@ Use a separate output folder for each book. Rerunning starts from page one,
 overwrites matching files, and leaves unmatched old files in place. Save any
 manual edits elsewhere before rerunning. Press `Ctrl+C` to stop processing.
 
+For automation, add `--events jsonl` to write versioned progress and artifact
+events as JSON Lines on stdout; diagnostics stay on stderr.
+
 ## Other OCR languages
 
 English, Spanish, Japanese, and Romanian OCR are included. To build with a
