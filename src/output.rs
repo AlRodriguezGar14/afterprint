@@ -26,16 +26,10 @@ pub fn write_document_outputs(
     artifact_written("debug/segments.json".into(), None);
 
     for page in &document.pages {
-        write_page(out, page.index, page.raw_output_mode, &page.raw_output)?;
-        artifact_written(
-            format!("{:04}.{}", page.index + 1, page.raw_output_mode.extension()),
-            Some(page.index + 1),
-        );
-        write_filtered_page(out, page.index, &page.filtered_text())?;
-        artifact_written(
-            format!("filtered/{:04}.txt", page.index + 1),
-            Some(page.index + 1),
-        );
+        let path = write_page(out, page.index, page.raw_output_mode, &page.raw_output)?;
+        artifact_written(path, Some(page.index + 1));
+        let path = write_filtered_page(out, page.index, &page.filtered_text())?;
+        artifact_written(path, Some(page.index + 1));
     }
 
     Ok(report.failures.len())
@@ -79,13 +73,14 @@ fn write_json<T: Serialize + ?Sized>(path: &Utf8Path, value: &T) -> Result<()> {
     Ok(())
 }
 
-fn write_filtered_page(out: &Utf8PathBuf, index: usize, text: &str) -> Result<Utf8PathBuf> {
+fn write_filtered_page(out: &Utf8PathBuf, index: usize, text: &str) -> Result<String> {
     let output_dir = out.join("filtered");
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("failed to create filtered output directory {output_dir}"))?;
-    let output_path = output_dir.join(format!("{:04}.txt", index + 1));
+    let relative_path = format!("filtered/{:04}.txt", index + 1);
+    let output_path = out.join(&relative_path);
     write_text_to_file(text.as_bytes(), &output_path)?;
-    Ok(output_path)
+    Ok(relative_path)
 }
 
 fn write_text_to_file(text: &[u8], output_path: &Utf8PathBuf) -> Result<()> {
@@ -93,11 +88,11 @@ fn write_text_to_file(text: &[u8], output_path: &Utf8PathBuf) -> Result<()> {
         .with_context(|| format!("failed to write text to {output_path}"))
 }
 
-fn write_page(out: &Utf8PathBuf, index: usize, mode: OcrMode, text: &str) -> Result<Utf8PathBuf> {
-    let filename = format!("{:04}.{}", index + 1, mode.extension());
-    let output_path = out.join(filename);
+fn write_page(out: &Utf8PathBuf, index: usize, mode: OcrMode, text: &str) -> Result<String> {
+    let relative_path = format!("{:04}.{}", index + 1, mode.extension());
+    let output_path = out.join(&relative_path);
     write_text_to_file(text.as_bytes(), &output_path)?;
-    Ok(output_path)
+    Ok(relative_path)
 }
 
 #[cfg(test)]
