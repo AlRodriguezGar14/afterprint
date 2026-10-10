@@ -253,12 +253,14 @@ fn parse_tsv(tsv: &str) -> (u32, u32, Vec<Block>) {
             entry.text.push(' ');
         }
         entry.text.push_str(fields[TSV_TEXT_COLUMN].trim());
-        entry.coordinates.left = entry.coordinates.left.min(left);
-        entry.coordinates.top = entry.coordinates.top.min(top);
-        let right = (entry.coordinates.left + entry.coordinates.width).max(left + width);
-        let bottom = (entry.coordinates.top + entry.coordinates.height).max(top + height);
-        entry.coordinates.width = right - entry.coordinates.left;
-        entry.coordinates.height = bottom - entry.coordinates.top;
+        let line_left = entry.coordinates.left.min(left);
+        let line_top = entry.coordinates.top.min(top);
+        let line_right = (entry.coordinates.left + entry.coordinates.width).max(left + width);
+        let line_bottom = (entry.coordinates.top + entry.coordinates.height).max(top + height);
+        entry.coordinates.left = line_left;
+        entry.coordinates.top = line_top;
+        entry.coordinates.width = line_right - line_left;
+        entry.coordinates.height = line_bottom - line_top;
         if confidence >= 0.0 {
             entry.confidence_total += confidence;
             entry.confidence_count += 1;
@@ -327,6 +329,28 @@ mod tests {
             }
         );
         assert_eq!(blocks[0].confidence, 70.0);
+    }
+
+    #[test]
+    fn line_bounds_include_later_words_extending_left_and_up() {
+        let tsv = concat!(
+            "1\t1\t0\t0\t0\t0\t0\t0\t1000\t2000\t-1\t\n",
+            "5\t1\t2\t1\t3\t1\t10\t20\t30\t40\t80\tHello\n",
+            "5\t1\t2\t1\t3\t2\t5\t10\t5\t20\t60\tworld\n",
+        );
+
+        let (_, _, blocks) = parse_tsv(&format!("{TSV_HEADER}{tsv}"));
+
+        assert_eq!(blocks[0].text, "Hello world");
+        assert_eq!(
+            blocks[0].coordinates,
+            Coordinates {
+                left: 5,
+                top: 10,
+                width: 35,
+                height: 50,
+            }
+        );
     }
 
     #[test]
