@@ -19,7 +19,7 @@ use crate::enums::{TranslationLanguage, TranslationModel};
 
 use super::{opus_pairs, translate_segments};
 
-const CT2_MAX_TRANSLATION_UNIT_CHARS: usize = 800;
+const CT2_MAX_TRANSLATION_UNIT_BYTES: usize = 800;
 const NLLB_MODEL_ID: &str = "facebook/nllb-200-distilled-600M";
 static NEXT_MODEL_DOWNLOAD_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
@@ -314,7 +314,7 @@ impl Ct2Translator {
     pub fn translate_segments(&self, sources: &[String]) -> Result<Vec<String>> {
         translate_segments(
             sources,
-            CT2_MAX_TRANSLATION_UNIT_CHARS,
+            CT2_MAX_TRANSLATION_UNIT_BYTES,
             |units| match self.model {
                 TranslationModel::Opus => self.translate_opus_units(units),
                 TranslationModel::Nllb => self.translate_nllb_units(units),

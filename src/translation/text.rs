@@ -15,15 +15,15 @@ fn paragraphs(source: &str) -> impl Iterator<Item = String> + '_ {
     })
 }
 
-fn chunks(text: &str, max_chars: usize) -> Vec<String> {
-    if text.len() <= max_chars {
+fn chunks(text: &str, max_bytes: usize) -> Vec<String> {
+    if text.len() <= max_bytes {
         return vec![text.to_string()];
     }
 
     text.split_whitespace()
         .fold(Vec::new(), |mut chunks, word| {
             match chunks.last_mut() {
-                Some(chunk) if chunk.len() + word.len() < max_chars => {
+                Some(chunk) if chunk.len() + word.len() < max_bytes => {
                     chunk.push(' ');
                     chunk.push_str(word);
                 }
@@ -34,7 +34,7 @@ fn chunks(text: &str, max_chars: usize) -> Vec<String> {
         })
 }
 
-pub fn translate_paragraphs<F>(source: &str, max_chars: usize, mut translate: F) -> Result<String>
+pub fn translate_paragraphs<F>(source: &str, max_bytes: usize, mut translate: F) -> Result<String>
 where
     // F must be a callable function or closure that receives a borrowed slice of strings and
     // returns either a vector of strings or an error
@@ -42,7 +42,7 @@ where
 {
     // Remembers original chunk grouping to reassemble the translated text into paragraphs
     let units_by_paragraph = paragraphs(source)
-        .map(|paragraph| chunks(&paragraph, max_chars))
+        .map(|paragraph| chunks(&paragraph, max_bytes))
         .collect::<Vec<_>>();
     // Flattened chunks: send this to the translate function
     let units = units_by_paragraph
@@ -84,7 +84,7 @@ where
 /// Translates each logical segment independently while preserving model chunking.
 pub fn translate_segments<F>(
     sources: &[String],
-    max_chars: usize,
+    max_bytes: usize,
     mut translate: F,
 ) -> Result<Vec<String>>
 where
@@ -92,7 +92,7 @@ where
 {
     sources
         .iter()
-        .map(|source| translate_paragraphs(source, max_chars, &mut translate))
+        .map(|source| translate_paragraphs(source, max_bytes, &mut translate))
         .collect()
 }
 

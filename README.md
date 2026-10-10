@@ -3,7 +3,7 @@
 Some books disappear not because they were forgotten, but because no usable
 digital copy survives.
 
-**afterprint** is a slow-built labor of love and a small contribution to
+**afterprint** is a experimentally built labor of love and a small contribution to
 preserving lost media. It turns scans of rare and out-of-print books into
 paragraph-aware text and optional local translations, so they can be read,
 searched, and shared again.
