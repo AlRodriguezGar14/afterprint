@@ -4,10 +4,12 @@ use crate::{
     pdf::PdfContent,
     translation::TranslationConfig,
 };
+use anyhow::Context;
 use camino::Utf8PathBuf;
 use clap::{
-    Parser, ValueEnum,
+    ArgMatches, Parser, ValueEnum,
     builder::{PossibleValue, PossibleValuesParser},
+    parser::ValueSource,
 };
 use std::path::PathBuf;
 
@@ -56,10 +58,18 @@ pub enum EventFormat {
 /// Clap adapter for the current terminal interface.
 #[command(version, about, long_about = None)]
 pub struct Args {
-    pub image_folder: Utf8PathBuf,
+    pub image_folder: Option<Utf8PathBuf>,
 
     #[arg(short, long)]
-    pub out: Utf8PathBuf,
+    pub out: Option<Utf8PathBuf>,
+
+    /// Open the desktop GUI instead of starting a run.
+    #[arg(long, conflicts_with = "cli")]
+    pub gui: bool,
+
+    /// Run headlessly using the CLI options.
+    #[arg(long, conflicts_with = "gui")]
+    pub cli: bool,
 
     #[arg(short, long, default_value = "Untitled")]
     pub title: String,
@@ -103,8 +113,16 @@ impl Args {
     /// Converts parsed CLI values to the same configuration used by libraries.
     pub fn run_config(&self) -> anyhow::Result<RunConfig> {
         Ok(RunConfig {
-            input: self.image_folder.clone().into_std_path_buf(),
-            output: self.out.clone().into_std_path_buf(),
+            input: self
+                .image_folder
+                .clone()
+                .context("a scan folder is required")?
+                .into_std_path_buf(),
+            output: self
+                .out
+                .clone()
+                .context("an output folder is required; pass --out")?
+                .into_std_path_buf(),
             ocr_language: self.ocr_language.clone(),
             ocr_mode: self.ocr_mode,
             title: self.title.clone(),
@@ -114,6 +132,35 @@ impl Args {
             pdf_content: self.pdf_content,
             translation: self.translation.translation_config()?,
         })
+    }
+
+    /// Accepts GUI folder/language prefills and rejects unsupported CLI options.
+    pub fn validate_gui_options(matches: &ArgMatches) -> anyhow::Result<()> {
+        let unsupported = [
+            ("title", "--title"),
+            ("author", "--author"),
+            ("language", "--language"),
+            ("ocr_mode", "--ocr-mode"),
+            ("translation_model", "--translation-model"),
+            ("translation_source", "--translation-source"),
+            ("translation_target", "--translation-target"),
+            ("translation_model_path", "--translation-model-path"),
+            ("pdf", "--pdf"),
+            ("pdf_content", "--pdf-content"),
+        ]
+        .into_iter()
+        .filter(|(id, _)| matches.value_source(id) == Some(ValueSource::CommandLine))
+        .map(|(_, flag)| flag)
+        .collect::<Vec<_>>();
+
+        if unsupported.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "the GUI supports scan folder, --out, and --ocr-language only; use --cli for {}",
+                unsupported.join(", ")
+            )
+        }
     }
 }
 
@@ -174,6 +221,7 @@ impl ValueEnum for TranslationLanguage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn parses_pdf_options_and_rejects_removed_flags() {
@@ -201,6 +249,56 @@ mod tests {
 
         assert_eq!(args.events, Some(EventFormat::Jsonl));
     }
+
+    #[test]
+    fn gui_mode_accepts_partial_configuration_without_starting_a_run() {
+        let args = Args::try_parse_from(["afterprint", "--gui", "--ocr-language", "fra"]).unwrap();
+
+        assert!(args.gui);
+        assert_eq!(args.image_folder, None);
+        assert_eq!(args.out, None);
+        assert_eq!(args.ocr_language, "fra");
+    }
+
+    #[test]
+    fn mistyped_romanian_language_code_suggests_ron() {
+        let error = Args::try_parse_from(["afterprint", "--gui", "--ocr-language", "rom"])
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("similar value exists: 'ron'"));
+    }
+
+    #[test]
+    fn gui_and_cli_modes_cannot_be_combined() {
+        assert!(Args::try_parse_from(["afterprint", "--gui", "--cli"]).is_err());
+    }
+
+    #[test]
+    fn gui_rejects_advanced_options_but_accepts_mvp_prefills() {
+        let matches = Args::command()
+            .try_get_matches_from(["afterprint", "--gui", "--pdf"])
+            .unwrap();
+        assert!(
+            Args::validate_gui_options(&matches)
+                .unwrap_err()
+                .to_string()
+                .contains("--pdf")
+        );
+
+        let matches = Args::command()
+            .try_get_matches_from([
+                "afterprint",
+                "--gui",
+                "scans",
+                "--out",
+                "out",
+                "--ocr-language",
+                "fra",
+            ])
+            .unwrap();
+        assert!(Args::validate_gui_options(&matches).is_ok());
+    }
 }
 
 const ISO_639_1_CODES: &[&str] = &[
@@ -218,7 +316,7 @@ const ISO_639_1_CODES: &[&str] = &[
     "cy", "fy", "wo", "xh", "yi", "yo", "za", "zu",
 ];
 
-const TESSERACT_LANGUAGES: &[&str] = &[
+pub(crate) const TESSERACT_LANGUAGES: &[&str] = &[
     "afr", "amh", "ara", "asm", "aze", "aze_cyrl", "bel", "ben", "bod", "bos", "brew", "bul",
     "cat", "ceb", "ces", "chi_sim", "chi_tra", "chr", "cos", "cym", "dan", "dan_frak", "deu",
     "deu_frak", "deu_latf", "dzo", "ell", "eng", "enm", "epo", "equ", "est", "eus", "fao", "fas",

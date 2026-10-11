@@ -4,10 +4,38 @@ use afterprint::{
     run, run_cli,
 };
 use anyhow::{Result, bail};
+use clap::{CommandFactory, FromArgMatches};
 use std::io::{self, Write};
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let matches = Args::command().get_matches();
+    let args = Args::from_arg_matches(&matches)?;
+
+    #[cfg(not(feature = "gui"))]
+    let gui_requested = args.gui;
+    #[cfg(feature = "gui")]
+    let gui_requested = args.gui || (!args.cli && args.image_folder.is_none());
+
+    if gui_requested {
+        if args.events.is_some() {
+            bail!("--events jsonl is only available in headless CLI mode; use --cli");
+        }
+        #[cfg(feature = "gui")]
+        {
+            Args::validate_gui_options(&matches)?;
+            return afterprint::gui::run(args).map_err(Into::into);
+        }
+        #[cfg(not(feature = "gui"))]
+        bail!("this build does not include the GUI; run `cargo run --features gui -- --gui`");
+    }
+
+    #[cfg(not(feature = "gui"))]
+    if !args.cli && args.image_folder.is_none() {
+        bail!(
+            "a scan folder is required; to open the GUI, run `cargo run --features gui -- --gui`"
+        );
+    }
+
     let config = args.run_config()?;
     let jsonl = args.events == Some(EventFormat::Jsonl);
     let mut output_error = None;

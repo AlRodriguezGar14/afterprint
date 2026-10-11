@@ -14,6 +14,8 @@ pub mod cli;
 mod document;
 mod enums;
 mod filter;
+#[cfg(feature = "gui")]
+pub mod gui;
 mod ocr;
 mod output;
 mod pdf;

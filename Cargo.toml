@@ -3,6 +3,9 @@ name = "afterprint"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+gui = ["dep:iced", "dep:rfd"]
+
 [dependencies]
 anyhow = "1"
 camino = "1"
@@ -16,3 +19,5 @@ serde_yaml = "0.9"
 tesseract = "0.15.2"
 walkdir = "2"
 ct2rs = "0.9.22"
+iced = { version = "0.14.0", default-features = false, features = ["tiny-skia", "thread-pool"], optional = true }
+rfd = { version = "0.17.2", optional = true }

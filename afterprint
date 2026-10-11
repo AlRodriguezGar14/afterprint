@@ -3,9 +3,16 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+if [[ ${1:-} == --gui ]]; then
+    shift
+    command -v cargo >/dev/null 2>&1 || { echo 'Install Rust/Cargo to run the native GUI.' >&2; exit 1; }
+    exec cargo run --manifest-path "$project_dir/Cargo.toml" --features gui -- --gui "$@"
+fi
+
 if [[ $# == 0 || ${1:-} == --help || ${1:-} == -h ]]; then
     cat <<'HELP'
 Usage: ./afterprint SCANS_FOLDER [--out OUTPUT_FOLDER] [OPTIONS]
+       ./afterprint --gui [SCANS_FOLDER] [--out OUTPUT_FOLDER] [--ocr-language CODE]
 
 Examples:
   ./afterprint ./scans
@@ -19,6 +26,7 @@ Models are downloaded after confirmation and saved for future runs.
 Later runs use the existing image. Add --build after the scans folder to
 rebuild after updating the app or changing OCR_LANGUAGES.
 Use --app-help to see all application options.
+The native GUI requires Rust/Cargo and host Tesseract; --gui builds it locally.
 HELP
     exit 0
 fi

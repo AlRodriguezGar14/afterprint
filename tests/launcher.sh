@@ -19,10 +19,26 @@ case "$*" in
 esac
 MOCK
 chmod +x "$test_dir/bin/docker"
-export PATH="$test_dir/bin:$PATH" LAUNCHER_LOG="$test_dir/call"
+cat >"$test_dir/bin/cargo" <<'MOCK'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$@" >"$GUI_LOG"
+MOCK
+chmod +x "$test_dir/bin/cargo"
+export PATH="$test_dir/bin:$PATH" LAUNCHER_LOG="$test_dir/call" GUI_LOG="$test_dir/gui-call"
 cd "$test_dir"
 launcher="$test_dir/project/afterprint"
 bash "$launcher" --help >/dev/null
+[[ ! -e $LAUNCHER_LOG ]]
+bash "$launcher" --gui --ocr-language spa
+grep -Fx -- 'run' "$GUI_LOG"
+grep -Fx -- '--manifest-path' "$GUI_LOG"
+grep -Fx -- "$test_dir/project/Cargo.toml" "$GUI_LOG"
+grep -Fx -- '--features' "$GUI_LOG"
+grep -Fx -- 'gui' "$GUI_LOG"
+grep -Fx -- '--gui' "$GUI_LOG"
+grep -Fx -- '--ocr-language' "$GUI_LOG"
+grep -Fx -- 'spa' "$GUI_LOG"
 [[ ! -e $LAUNCHER_LOG ]]
 bash "$launcher" 'book pages' --out 'result pages' --translation-model-path model --ocr-language spa
 expected_root="$(pwd -P)"

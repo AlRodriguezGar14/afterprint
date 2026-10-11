@@ -5,6 +5,18 @@ use afterprint::{
 use serde_json::Value;
 use std::{path::PathBuf, process::Command};
 
+#[cfg(not(feature = "gui"))]
+#[test]
+fn headless_gui_request_explains_which_build_to_use() {
+    let result = Command::new(env!("CARGO_BIN_EXE_afterprint"))
+        .arg("--gui")
+        .output()
+        .unwrap();
+
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("cargo run --features gui -- --gui"));
+}
+
 #[test]
 fn library_api_runs_the_fixture_and_returns_typed_page_and_artifact_events() {
     let root = temp_dir("library-api");
